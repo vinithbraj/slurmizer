@@ -45,7 +45,7 @@ flowchart LR
   IDP["IdP (OIDC/SAML)\nAzure AD/Okta/etc."]:::sec
   PROXY["API Gateway / Ingress\n(mTLS, JWT, WAF)"]:::sec
 
-  U -->|HTTPS (OIDC Login)| FE
+  U -->|"HTTPS (OIDC Login)"| FE
   FE -->|REST/GraphQL| API
   API -->|Upload streams| S3
   API -->|Create JobSpec| Q
