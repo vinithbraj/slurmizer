@@ -8,7 +8,7 @@ flowchart LR
 
   U["Users<br/>(Researchers / App Teams)"]:::svc
 
-  subgraph PORTAL[Web Portal & Control Plane (TypeScript/Node)]
+  subgraph PORTAL["Web Portal & Control Plane (TypeScript/Node)"]
     direction TB
     FE["Frontend (Next.js)"]:::svc
     API["Portal API (Fastify)\n• OIDC/JWT\n• Job Wizard\n• Uploads (S3/MinIO)\n• Usage view"]:::svc
@@ -16,12 +16,12 @@ flowchart LR
     RPT["Reporting Service\n(sreport/sacct wrapper)"]:::svc
   end
 
-  subgraph GW[Job Gateway / Adapter (TypeScript/Node)]
+  subgraph GW["Job Gateway / Adapter (TypeScript/Node)"]
     direction TB
     TGW["Gateway Worker\n• Validate JobSpec\n• Build Slurm REST body\n• Submit/Cancel/Poll"]:::svc
   end
 
-  subgraph SLURM[Slurm Control Plane]
+  subgraph SLURM["Slurm Control Plane"]
     direction LR
     REST["slurmrestd\n(REST API + JWT)"]:::ctrl
     CTLD["slurmctld\n(Scheduler/Controller)"]:::ctrl
@@ -29,7 +29,7 @@ flowchart LR
     ACCDB["Accounting DB\n(MariaDB/MySQL)\n• TRES: gres/gpu\n• Users/Accounts/QOS"]:::core
   end
 
-  subgraph NODES[GPU Compute Nodes (Ubuntu)]
+  subgraph NODES["GPU Compute Nodes (Ubuntu)"]
     direction TB
     style NODES stroke-dasharray: 3 3
     N1["slurmd + cgroups\nGresTypes=gpu\nCUDA_VISIBLE_DEVICES"]:::node
@@ -37,7 +37,7 @@ flowchart LR
     PRO["Prolog/Epilog Hooks\n• Stage-in/out data\n• Scratch mgmt"]:::node
   end
 
-  subgraph STOR[Storage & Artifacts]
+  subgraph STOR["Storage & Artifacts"]
     S3["Object Store (MinIO/S3)\n• Code/Data Uploads\n• Results Artifacts"]:::store
     FS["Shared FS (NFS/BeeGFS/Lustre)\n• Logs\n• Work dirs"]:::store
   end
