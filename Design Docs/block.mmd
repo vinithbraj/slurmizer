@@ -1,0 +1,70 @@
+flowchart LR
+  classDef svc fill:#eef7ff,stroke:#5b8def,stroke-width:1px,rx:8,ry:8
+  classDef core fill:#f7f7ff,stroke:#7d7dff,stroke-width:1px,rx:8,ry:8
+  classDef ctrl fill:#fff7e6,stroke:#f0a202,stroke-width:1px,rx:8,ry:8
+  classDef node fill:#f0fff4,stroke:#38a169,stroke-width:1px,rx:8,ry:8
+  classDef store fill:#fff0f6,stroke:#d53f8c,stroke-width:1px,rx:8,ry:8
+  classDef sec fill:#f5f5f5,stroke:#4a5568,stroke-width:1px,rx:8,ry:8
+
+  U["Users<br/>(Researchers / App Teams)"]:::svc
+
+  subgraph PORTAL[Web Portal & Control Plane (TypeScript/Node)]
+    direction TB
+    FE["Frontend (Next.js)"]:::svc
+    API["Portal API (Fastify)\n• OIDC/JWT\n• Job Wizard\n• Uploads (S3/MinIO)\n• Usage view"]:::svc
+    Q["Queue (Redis/BullMQ)"]:::svc
+    RPT["Reporting Service\n(sreport/sacct wrapper)"]:::svc
+  end
+
+  subgraph GW[Job Gateway / Adapter (TypeScript/Node)]
+    direction TB
+    TGW["Gateway Worker\n• Validate JobSpec\n• Build Slurm REST body\n• Submit/Cancel/Poll"]:::svc
+  end
+
+  subgraph SLURM[Slurm Control Plane]
+    direction LR
+    REST["slurmrestd\n(REST API + JWT)"]:::ctrl
+    CTLD["slurmctld\n(Scheduler/Controller)"]:::ctrl
+    DBD["slurmdbd\n(Accounting Daemon)"]:::ctrl
+    ACCDB["Accounting DB\n(MariaDB/MySQL)\n• TRES: gres/gpu\n• Users/Accounts/QOS"]:::core
+  end
+
+  subgraph NODES[GPU Compute Nodes (Ubuntu)]
+    direction TB
+    style NODES stroke-dasharray: 3 3
+    N1["slurmd + cgroups\nGresTypes=gpu\nCUDA_VISIBLE_DEVICES"]:::node
+    C1["Containers\n(Apptainer/Docker)\nUser code + models"]:::node
+    PRO["Prolog/Epilog Hooks\n• Stage-in/out data\n• Scratch mgmt"]:::node
+  end
+
+  subgraph STOR[Storage & Artifacts]
+    S3["Object Store (MinIO/S3)\n• Code/Data Uploads\n• Results Artifacts"]:::store
+    FS["Shared FS (NFS/BeeGFS/Lustre)\n• Logs\n• Work dirs"]:::store
+  end
+
+  IDP["IdP (OIDC/SAML)\nAzure AD/Okta/etc."]:::sec
+  PROXY["API Gateway / Ingress\n(mTLS, JWT, WAF)"]:::sec
+
+  U -->|HTTPS (OIDC Login)| FE
+  FE -->|REST/GraphQL| API
+  API -->|Upload streams| S3
+  API -->|Create JobSpec| Q
+  API <-->|Usage/Quota| RPT
+  Q --> TGW
+  TGW -->|HTTPS + X-SLURM-USER-*| REST
+  REST --> CTLD
+  CTLD <-->|acct events| DBD
+  DBD <-->|SQL| ACCDB
+  CTLD -->|Jobs/Steps| N1
+  N1 --> C1
+  N1 --> PRO
+  PRO <-->|stage-in/out| S3
+  C1 -->|logs/stdout| FS
+  API -->|serve logs| FE
+  FE -->|OIDC| IDP
+  FE --> PROXY
+  PROXY --> API
+  PROXY --> TGW
+  TGW -->|JWT rotation helper| REST
+  RPT -->|sreport/sacct| CTLD
+  RPT <-->|SQL views| ACCDB

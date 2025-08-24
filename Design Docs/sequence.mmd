@@ -1,0 +1,42 @@
+sequenceDiagram
+  autonumber
+  participant User
+  participant FE as Frontend (Portal)
+  participant API as Portal API
+  participant S3 as Object Store (S3/MinIO)
+  participant Q as Queue (BullMQ)
+  participant GW as Job Gateway
+  participant REST as slurmrestd (JWT)
+  participant CTLD as slurmctld
+  participant N as GPU Node (slurmd)
+  participant RPT as Reporting
+
+  User->>FE: Sign in (OIDC)
+  FE->>API: Submit JobSpec + selects image/resources
+  API->>S3: Stream upload code/data
+  API->>RPT: Check remaining GPU-mins
+  RPT-->>API: Remaining budget / policy
+  API->>Q: Enqueue {user, JobSpec}
+  Q-->>GW: Deliver job
+  GW->>REST: POST /job/submit (X-SLURM-USER-*)
+  REST->>CTLD: Create job
+  CTLD-->>GW: JobID
+  GW-->>API: PortalJobId + JobID
+  API-->>FE: Show queued/running
+
+  CTLD->>N: Dispatch job (cgroups + GRES)
+  N->>N: Prolog: stage-in inputs
+  N->>N: Start container (Apptainer/Docker)
+  N-->>S3: Epilog: upload results
+
+  loop Status/Logs
+    FE->>API: Poll/Subscribe events
+    API->>GW: Fetch job state/log tail
+    GW->>REST: GET /job/{id}
+    REST-->>GW: State/metrics
+    GW-->>API: Running/Completed + stdout tail
+    API-->>FE: Update UI
+  end
+
+  CTLD->>RPT: Accounting (TRES: gres/gpu)
+  RPT-->>API: Usage for dashboards
