@@ -14,6 +14,9 @@ NODES="${NODES:-$(hostname -s)}"
 # Configless lets compute nodes fetch config from controller (recommended)
 ENABLE_CONFIGLESS="${ENABLE_CONFIGLESS:-1}"       # 1=on, 0=off
 
+# Controller hostname/FQDN used by --conf-server (short is fine if resolvable)
+CONTROLLER_HOST="${CONTROLLER_HOST:-$(hostname -f || hostname -s)}"
+
 # GPU support (optional). If 1, we'll add GresTypes=gpu in slurm.conf.
 GPU_ENABLE="${GPU_ENABLE:-0}"
 
@@ -32,12 +35,13 @@ HOST_FQDN="$(hostname -f || echo "$HOST_SHORT")"
 CPUS="$(nproc)"
 # RealMemory in MB (subtract ~5% to avoid OOM on tiny VMs)
 MEM_MB="$(free -m | awk '/Mem:/ {printf "%d", $2*0.95}')"
+echo "CPUS=$CPUS MEM_MB=$MEM_MB"
 
 echo "[*] Installing packages..."
 sudo apt-get update -y
 sudo apt-get install -y \
   slurm-wlm slurmctld slurmd slurm-client slurmrestd \
-  munge libmunge2 libmunge-dev jq chrony
+  munge libmunge2 libmunge-dev jq chrony libpmix2 libpmix-dev binutils
 
 # (Optional) Open firewall ports for slurm + slurmrestd
 if [ "${OPEN_PORTS}" = "1" ]; then
@@ -62,13 +66,11 @@ sudo install -o munge -g munge -m 0700 -d /var/lib/munge /var/log/munge /run/mun
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ ! -f /etc/munge/munge.key ]; then
-  # If you have a helper script to generate the key, call it; otherwise generate here.
   if [ -f "$SCRIPT_DIR/create-munge-key.sh" ]; then
-    sed -i 's/\r$//' "$SCRIPT_DIR/create-munge-key.sh" || true   # no-op if already LF
+    sed -i 's/\r$//' "$SCRIPT_DIR/create-munge-key.sh" || true
     chmod +x "$SCRIPT_DIR/create-munge-key.sh"
     sudo bash "$SCRIPT_DIR/create-munge-key.sh"
   else
-    # Inline generation (equivalent to create-munge-key)
     sudo dd if=/dev/urandom of=/etc/munge/munge.key bs=1 count=1024 status=none
   fi
   sudo chown munge:munge /etc/munge/munge.key
@@ -103,19 +105,17 @@ sudo touch /var/log/slurmctld.log /var/log/slurmd.log
 sudo chown slurm:slurm /var/log/slurmctld.log /var/log/slurmd.log
 
 # =========================
-# slurm.conf (multi-node friendly)
+# slurm.conf (controller copy)
 # =========================
 SLURM_CONF=/etc/slurm/slurm.conf
 echo "[*] Writing $SLURM_CONF ..."
 sudo tee "$SLURM_CONF" >/dev/null <<EOF
-# --- Cluster config (controller: ${HOST_SHORT}) ---
+# --- Cluster config (controller: ${CONTROLLER_HOST}) ---
 ClusterName=${CLUSTER_NAME}
-SlurmctldHost=${HOST_SHORT}
+SlurmctldHost=${CONTROLLER_HOST}
 SlurmUser=slurm
 AuthType=auth/munge
-
-# Allow configless operation for compute nodes (slurmd -Z)
-SlurmctldParameters=$( [ "${ENABLE_CONFIGLESS}" = "1" ] && echo enable_configless || echo "" )
+$( [ "${ENABLE_CONFIGLESS}" = "1" ] && echo "SlurmctldParameters=enable_configless" )
 
 # Logging
 SlurmctldLogFile=/var/log/slurmctld.log
@@ -146,25 +146,13 @@ $( [ "${GPU_ENABLE}" = "1" ] && echo "GresTypes=gpu" )
 
 # Nodes & Partitions
 # Let nodes register and report their resources; keep first state UNKNOWN
-NodeName=${NODES} State=UNKNOWN
+NodeName=${HOST_SHORT} CPUs=${CPUS} RealMemory=${MEM_MB} State=UNKNOWN
 PartitionName=${PARTITION_NAME} Nodes=${NODES} Default=YES MaxTime=INFINITE State=UP
 EOF
 
 # =========================
-# Start Slurm daemons
+# JWT + non-root slurmrestd
 # =========================
-echo "[*] Enable and start slurm daemons..."
-# enable for persistence across reboots
-sudo systemctl enable --now slurmctld
-sudo systemctl enable --now slurmd
-sudo scontrol reconfigure || true
-
-
-
-# =========================
-# (4a–4e) JWT + non-root slurmrestd
-# =========================
-
 # 4a) Make sure slurm can talk to munge
 sudo usermod -aG munge slurm
 
@@ -175,13 +163,15 @@ sudo chmod 600 /etc/slurm/jwt_hs256.key
 
 # 4c) Enable JWT in slurm.conf (controller side)
 sudo awk '
-  BEGIN{f=0}
-  /^AuthAltTypes/      { $0="AuthAltTypes=auth/jwt"; f=1 }
-  /^AuthAltParameters/ { $0="AuthAltParameters=jwt_key=/etc/slurm/jwt_hs256.key"; f=1 }
+  BEGIN{t=0;p=0}
+  /^AuthAltTypes/      { $0="AuthAltTypes=auth/jwt"; t=1 }
+  /^AuthAltParameters/ { $0="AuthAltParameters=jwt_key=/etc/slurm/jwt_hs256.key"; p=1 }
   {print}
+  END{
+    if(!t) print "AuthAltTypes=auth/jwt";
+    if(!p) print "AuthAltParameters=jwt_key=/etc/slurm/jwt_hs256.key";
+  }
 ' "$SLURM_CONF" | sudo tee /etc/slurm/slurm.conf.new >/dev/null
-grep -q '^AuthAltTypes=' /etc/slurm/slurm.conf.new || echo 'AuthAltTypes=auth/jwt' | sudo tee -a /etc/slurm/slurm.conf.new >/dev/null
-grep -q '^AuthAltParameters=' /etc/slurm/slurm.conf.new || echo 'AuthAltParameters=jwt_key=/etc/slurm/jwt_hs256.key' | sudo tee -a /etc/slurm/slurm.conf.new >/dev/null
 sudo mv /etc/slurm/slurm.conf.new /etc/slurm/slurm.conf
 
 # 4d) Run slurmrestd as the slurm user via drop-in
@@ -191,18 +181,40 @@ sudo tee /etc/systemd/system/slurmrestd.service.d/override.conf >/dev/null <<EOF
 [Service]
 User=slurm
 Group=slurm
-# clear and set ExecStart explicitly
 ExecStart=
-# Expose only the Slurm API; do NOT expose slurmdbd endpoints
 ExecStart=/usr/sbin/slurmrestd -a rest_auth/jwt -s slurmctld ${LISTEN_ADDR}:${RESTD_PORT}
-# lock down file creation by default
 UMask=0077
 EOF
 
-# 4e) Apply and restart services
-sudo systemctl daemon-reload
-sudo systemctl restart munge
+# =========================
+# Point slurmd at the controller (configless fetch)
+# =========================
+echo "[*] Pointing slurmd at conf-server=${CONTROLLER_HOST} …"
+if [[ -f /etc/default/slurmd ]]; then
+  if grep -q '^SLURMD_OPTIONS=' /etc/default/slurmd; then
+    sudo sed -i 's|^SLURMD_OPTIONS=.*|SLURMD_OPTIONS="--conf-server='"${CONTROLLER_HOST}"'"|' /etc/default/slurmd
+  else
+    echo 'SLURMD_OPTIONS="--conf-server='"${CONTROLLER_HOST}"'"' | sudo tee -a /etc/default/slurmd >/dev/null
+  fi
+else
+  echo 'SLURMD_OPTIONS="--conf-server='"${CONTROLLER_HOST}"'"' | sudo tee /etc/default/slurmd >/dev/null
+fi
+
+# =========================
+# Start/Restart Slurm daemons (order matters)
+# =========================
+echo "[*] Enable and (re)start slurm daemons..."
+sudo systemctl daemon-reload || true
+sudo systemctl enable slurmctld slurmd >/dev/null 2>&1 || true
+
+# Controller first (serves config)
 sudo systemctl restart slurmctld
+# Then node daemon (fetches config from controller)
+sudo systemctl restart slurmd
+# Push any pending changes
+sudo scontrol reconfigure || true
+
+# Start slurmrestd
 sudo systemctl enable --now slurmrestd || true
 
 # =========================
@@ -219,7 +231,7 @@ if command -v scontrol >/dev/null 2>&1; then
   if [ -n "${TOKEN}" ]; then
     echo "${TOKEN}" > /tmp/SLURM_JWT
     echo "[ok] JWT saved to /tmp/SLURM_JWT (Bearer token)"
-    echo "Try (version may vary):  curl -s -H \"Authorization: Bearer \$(cat /tmp/SLURM_JWT)\" http://localhost:${RESTD_PORT}/openapi/v0.0.40/ping | jq"
+    echo "Try: curl -s -H \"Authorization: Bearer \$(cat /tmp/SLURM_JWT)\" http://localhost:${RESTD_PORT}/openapi/v0.0.40/ping | jq"
   else
     echo "[warn] 'scontrol token' did not emit a token. For dev, you can switch slurmrestd to: -a rest_auth/munge"
   fi
@@ -239,19 +251,14 @@ echo "      - Cluster: ${CLUSTER_NAME}"
 echo "      - Nodes in default partition: ${NODES}"
 echo
 if [ "${ENABLE_CONFIGLESS}" = "1" ]; then
-  cat <<'TIP'
-TIP: On each compute node, copy the same /etc/munge/munge.key and start slurmd in configless mode:
+  cat <<TIP
+TIP: For additional compute nodes (not this controller), copy /etc/munge/munge.key,
+install the same Slurm packages, and point slurmd at this controller:
+  CTRL=${CONTROLLER_HOST}
+  echo "SLURMD_OPTIONS=\\"--conf-server=\$CTRL\\"" | sudo tee /etc/default/slurmd
   sudo systemctl enable --now munge
-  sudo mkdir -p /etc/systemd/system/slurmd.service.d
-  sudo tee /etc/systemd/system/slurmd.service.d/override.conf >/dev/null <<EOOVR
-[Service]
-ExecStart=
-ExecStart=/usr/sbin/slurmd -Z
-EOOVR
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now slurmd
-
-Then verify on controller:
+  sudo systemctl restart slurmd
+Then verify from the controller:
   sinfo -N -l
   srun -w <node> -N1 -n1 hostname
 TIP
