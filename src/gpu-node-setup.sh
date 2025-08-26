@@ -1,78 +1,158 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# If this is a separate VM, ensure you copy /etc/munge/munge.key from the controller first.
-# On a single-VM test, just run this after controller-setup.sh.
+# =========================
+# Tunables (override via env)
+# =========================
+CONTROLLER_HOST="${CONTROLLER_HOST:-slurm-ctl}"  # short/FQDN or IP of controller
+ENABLE_CONFIGLESS="${ENABLE_CONFIGLESS:-1}"       # 1=use --conf-server, 0=classic files
+GPU_ENABLE="${GPU_ENABLE:-0}"                     # 1=detect NVIDIA GPUs with NVML
+OPEN_PORTS="${OPEN_PORTS:-1}"                     # 1=open ufw port 6818 (slurmd)
+NODENAME_OVERRIDE="${NODENAME_OVERRIDE:-}"        # Optional: force SlurmNodeName
 
-SLURM_CONF=/etc/slurm/slurm.conf
-GRES_CONF=/etc/slurm/gres.conf
+# If copying munge key from controller via scp:
+#   export CONTROLLER_SSH_USER=ubuntu (or leave empty to use current user)
+CONTROLLER_SSH_USER="${CONTROLLER_SSH_USER:-}"
+
+# =========================
+# Derived
+# =========================
 HOST_SHORT="$(hostname -s)"
+HOST_FQDN="$(hostname -f || echo "$HOST_SHORT")"
 
-echo "[*] Installing node bits..."
+echo "[*] Installing packages..."
 sudo apt-get update -y
-sudo apt-get install -y slurmd munge
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  slurmd slurm-client \
+  munge libmunge2 libmunge-dev jq
 
-echo "[*] Ensure munge is running..."
-sudo systemctl enable --now munge
-
-echo "[*] Detect GPUs..."
-GPU_CNT=0
-if command -v nvidia-smi >/dev/null 2>&1; then
-  GPU_CNT="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l | tr -d ' ')"
+# ---------- Hostname sanity (helps Slurm & munge) ----------
+echo "[*] Ensuring /etc/hosts has this host and controller entries..."
+if ! grep -qE "[[:space:]]${HOST_SHORT}(\s|$)" /etc/hosts; then
+  echo "127.0.1.1 ${HOST_FQDN} ${HOST_SHORT}" | sudo tee -a /etc/hosts >/dev/null
 fi
-echo "Detected GPUs: ${GPU_CNT}"
-
-echo "[*] Ensure GRES types and NodeName Gres are present in slurm.conf..."
-# 1) Add/replace GresTypes=gpu (idempotent)
-if grep -q "^GresTypes=" "$SLURM_CONF"; then
-  sudo sed -i 's/^GresTypes=.*/GresTypes=gpu/' "$SLURM_CONF"
-else
-  echo "GresTypes=gpu" | sudo tee -a "$SLURM_CONF" >/dev/null
+if [[ -n "${CONTROLLER_HOST}" ]] && ! grep -q "${CONTROLLER_HOST}" /etc/hosts; then
+  # Safe add a placeholder if CONTROLLER_HOST is a bare name; you can edit later for IP
+  echo "# Edit with correct IP if needed" | sudo tee -a /etc/hosts >/dev/null
+  echo "10.0.0.1  ${CONTROLLER_HOST}" | sudo tee -a /etc/hosts >/dev/null
 fi
 
-# 2) Add/patch NodeName line to include Gres=gpu:X (only for this host)
-if grep -q "^NodeName=${HOST_SHORT} " "$SLURM_CONF"; then
-  # If a NodeName exists, ensure it contains a Gres=... entry matching GPU_CNT (or 0 if none)
-  if grep -q "^NodeName=${HOST_SHORT} .*Gres=" "$SLURM_CONF"; then
-    sudo sed -i "s/^NodeName=${HOST_SHORT} .*Gres=[^ ]*/NodeName=${HOST_SHORT} Gres=gpu:${GPU_CNT}/" "$SLURM_CONF"
-  else
-    sudo sed -i "s/^NodeName=${HOST_SHORT} .*/& Gres=gpu:${GPU_CNT}/" "$SLURM_CONF"
+# ---------- MUNGE setup ----------
+echo "[*] Setting up MUNGE..."
+if [[ ! -f /etc/munge/munge.key ]]; then
+  echo "[*] No munge key found locally. Attempting to copy from controller..."
+  SRC_HOST="${CONTROLLER_HOST}"
+  [[ -n "${CONTROLLER_SSH_USER}" ]] && SRC_HOST="${CONTROLLER_SSH_USER}@${CONTROLLER_HOST}"
+
+  set +e
+  scp -q "${SRC_HOST}:/etc/munge/munge.key" /tmp/munge.key
+  SCP_RC=$?
+  set -e
+
+  if [[ $SCP_RC -ne 0 ]]; then
+    echo "[-] Could not scp /etc/munge/munge.key from ${CONTROLLER_HOST}."
+    echo "    Copy it manually to this node, then re-run this script, e.g.:"
+    echo "    sudo scp ${SRC_HOST}:/etc/munge/munge.key /etc/munge/munge.key"
+    exit 1
   fi
-else
-  # No NodeName yet (unlikely on single-VM); create a minimal one
-  CPUS="$(nproc)"; MEM_MB="$(free -m | awk '/Mem:/ {printf "%d", $2*0.95}')"
-  echo "NodeName=${HOST_SHORT} CPUs=${CPUS} RealMemory=${MEM_MB} Gres=gpu:${GPU_CNT} State=UNKNOWN" | sudo tee -a "$SLURM_CONF" >/dev/null
+
+  sudo install -o munge -g munge -m 0400 /tmp/munge.key /etc/munge/munge.key
+  rm -f /tmp/munge.key
 fi
 
-echo "[*] Write ${GRES_CONF}..."
+echo "[*] Enabling and starting munge..."
+sudo systemctl enable --now munge
+sudo systemctl --no-pager --full status munge | sed -n '1,8p' || true
+
+# ---------- Slurm (compute) ----------
+echo "[*] Preparing slurmd configuration..."
+
+if [[ "${ENABLE_CONFIGLESS}" == "1" ]]; then
+  echo "[*] Using CONFIGLESS mode via --conf-server=${CONTROLLER_HOST} ..."
+  # Create a systemd override to pass --conf-server to slurmd
+  sudo mkdir -p /etc/systemd/system/slurmd.service.d
+  cat <<EOF | sudo tee /etc/systemd/system/slurmd.service.d/override.conf >/dev/null
+[Service]
+Environment=SLURMD_OPTIONS=--conf-server=${CONTROLLER_HOST}
+EOF
+  sudo systemctl daemon-reload
+else
+  echo "[*] Classic mode: expecting /etc/slurm/slurm.conf from controller..."
+  # Try to fetch slurm.conf and gres.conf (if present)
+  SRC_HOST="${CONTROLLER_HOST}"
+  [[ -n "${CONTROLLER_SSH_USER}" ]] && SRC_HOST="${CONTROLLER_SSH_USER}@${CONTROLLER_HOST}"
+  sudo mkdir -p /etc/slurm
+  set +e
+  scp -q "${SRC_HOST}:/etc/slurm/slurm.conf" /tmp/slurm.conf && sudo mv /tmp/slurm.conf /etc/slurm/slurm.conf
+  scp -q "${SRC_HOST}:/etc/slurm/gres.conf" /tmp/gres.conf && sudo mv /tmp/gres.conf /etc/slurm/gres.conf
+  set -e
+  if [[ ! -f /etc/slurm/slurm.conf ]]; then
+    echo "[-] /etc/slurm/slurm.conf not present and could not be copied."
+    echo "    Copy it from controller, then re-run this script."
+    exit 1
+  fi
+fi
+
+# ---------- Optional: GPU (gres) ----------
+if [[ "${GPU_ENABLE}" == "1" ]]; then
+  echo "[*] Configuring GPU GRES (AutoDetect=nvml)..."
+  # NVML comes with NVIDIA drivers. We don't install drivers here (node-specific),
+  # we just configure Slurm to auto-detect if drivers are present.
+  sudo mkdir -p /etc/slurm
+  if [[ ! -f /etc/slurm/gres.conf ]]; then
+    echo "AutoDetect=nvml" | sudo tee /etc/slurm/gres.conf >/dev/null
+  fi
+fi
+
+# ---------- NodeName override (optional) ----------
+if [[ -n "${NODENAME_OVERRIDE}" ]]; then
+  echo "[*] Setting NodeName override to ${NODENAME_OVERRIDE}"
+  sudo mkdir -p /etc/systemd/system/slurmd.service.d
+  cat <<EOF | sudo tee /etc/systemd/system/slurmd.service.d/nodename.conf >/dev/null
+[Service]
+Environment=SLURMD_OPTIONS=\$SLURMD_OPTIONS --nodename=${NODENAME_OVERRIDE}
+EOF
+  sudo systemctl daemon-reload
+fi
+
+# ---------- CGroup basic config (safe defaults) ----------
+echo "[*] Ensuring basic cgroup config..."
 sudo mkdir -p /etc/slurm
-if command -v nvidia-smi >/dev/null 2>&1 && [ "$GPU_CNT" -gt 0 ]; then
-  # Prefer NVML autodetect when available
-  sudo tee "$GRES_CONF" >/dev/null <<EOF
-# Autodetect NVIDIA GPUs via NVML
-AutoDetect=nvml
+cat <<'EOF' | sudo tee /etc/slurm/cgroup.conf >/dev/null
+CgroupAutomount=yes
+ConstrainCores=yes
+ConstrainRAMSpace=yes
+ConstrainDevices=yes
+# If using swap accounting and you want to constrain it, enable next line:
+# ConstrainSwapSpace=yes
 EOF
-else
-  # Fallback: static example (kept harmless when no GPUs)
-  sudo tee "$GRES_CONF" >/dev/null <<'EOF'
-# No NVML detected. Example static entries (commented):
-# NodeName=DEFAULT Name=gpu File=/dev/nvidia0
-EOF
+
+# ---------- Open firewall (optional) ----------
+if [[ "${OPEN_PORTS}" == "1" ]]; then
+  if command -v ufw >/dev/null 2>&1; then
+    echo "[*] Opening slurmd port 6818 via ufw..."
+    sudo ufw allow 6818/tcp || true
+  else
+    echo "[*] ufw not present; skipping firewall changes."
+  fi
 fi
 
-echo "[*] Restart slurmd..."
+# ---------- Start slurmd ----------
+echo "[*] Enabling and starting slurmd..."
 sudo systemctl enable --now slurmd
-sudo systemctl restart slurmd
+sleep 1
+sudo systemctl --no-pager --full status slurmd | sed -n '1,12p' || true
 
-echo "[*] Show cluster view..."
-sinfo || true
-scontrol show node "${HOST_SHORT}" || true
-
-if command -v nvidia-smi >/dev/null 2>&1; then
-  echo "[*] nvidia-smi:"
-  nvidia-smi || true
-else
-  echo "[warn] nvidia-smi not found. Install NVIDIA drivers to make GPUs usable by Slurm."
-fi
-
-echo "[DONE] GPU node setup complete on ${HOST_SHORT}."
+echo
+echo "[✓] Worker node setup complete."
+echo "Next steps / quick checks:"
+echo "  On controller:  sinfo             # see node appear"
+echo "                  scontrol show nodes ${NODENAME_OVERRIDE:-$HOST_SHORT}"
+echo
+echo "  From any node (debug):"
+echo "    srun -N1 -w ${NODENAME_OVERRIDE:-$HOST_SHORT} hostname"
+echo
+echo "If node stays in DRAIN/DOWN:"
+echo "  - Check 'journalctl -u slurmd -e' here"
+echo "  - Check 'journalctl -u slurmctld -e' on controller"
+echo "  - Verify MUNGE: run 'munge -n | unmunge' locally; and cross-node 'remunge' test."
