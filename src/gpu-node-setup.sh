@@ -2,17 +2,50 @@
 set -euo pipefail
 
 # =========================
-# Tunables (override via env)
+# Tunables (default values)
 # =========================
-CONTROLLER_HOST="${CONTROLLER_HOST:-slurm-ctl}"  # short/FQDN or IP of controller
-ENABLE_CONFIGLESS="${ENABLE_CONFIGLESS:-1}"       # 1=use --conf-server, 0=classic files
-GPU_ENABLE="${GPU_ENABLE:-0}"                     # 1=detect NVIDIA GPUs with NVML
-OPEN_PORTS="${OPEN_PORTS:-1}"                     # 1=open ufw port 6818 (slurmd)
-NODENAME_OVERRIDE="${NODENAME_OVERRIDE:-}"        # Optional: force SlurmNodeName
+CONTROLLER_HOST="slurm-ctl"   # short/FQDN or IP of controller
+ENABLE_CONFIGLESS=1           # 1=use --conf-server, 0=classic files
+GPU_ENABLE=0                  # 1=detect NVIDIA GPUs with NVML
+OPEN_PORTS=1                  # 1=open ufw port 6818 (slurmd)
+NODENAME_OVERRIDE=""          # Optional: force SlurmNodeName
+CONTROLLER_SSH_USER=""        # Optional: scp user for munge key
 
-# If copying munge key from controller via scp:
-#   export CONTROLLER_SSH_USER=ubuntu (or leave empty to use current user)
-CONTROLLER_SSH_USER="${CONTROLLER_SSH_USER:-}"
+# =========================
+# Parse CLI args (override defaults/env)
+# =========================
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --controller)   CONTROLLER_HOST="$2"; shift 2 ;;
+    --configless)   ENABLE_CONFIGLESS="$2"; shift 2 ;;
+    --gpu-enable)   GPU_ENABLE="$2"; shift 2 ;;
+    --open-ports)   OPEN_PORTS="$2"; shift 2 ;;
+    --nodename)     NODENAME_OVERRIDE="$2"; shift 2 ;;
+    --ssh-user)     CONTROLLER_SSH_USER="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: $0 [--controller host] [--configless 0|1] [--gpu-enable 0|1] [--open-ports 0|1] [--nodename name] [--ssh-user user]"
+      exit 0
+      ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+
+# =========================
+# Allow env overrides (args > env > defaults)
+# =========================
+CONTROLLER_HOST="${CONTROLLER_HOST:-${CONTROLLER_HOST}}"
+ENABLE_CONFIGLESS="${ENABLE_CONFIGLESS:-${ENABLE_CONFIGLESS}}"
+GPU_ENABLE="${GPU_ENABLE:-${GPU_ENABLE}}"
+OPEN_PORTS="${OPEN_PORTS:-${OPEN_PORTS}}"
+NODENAME_OVERRIDE="${NODENAME_OVERRIDE:-${NODENAME_OVERRIDE}}"
+CONTROLLER_SSH_USER="${CONTROLLER_SSH_USER:-${CONTROLLER_SSH_USER}}"
+
+echo "Controller:        $CONTROLLER_HOST"
+echo "Configless:        $ENABLE_CONFIGLESS"
+echo "GPU Enable:        $GPU_ENABLE"
+echo "Open Ports:        $OPEN_PORTS"
+echo "NodeName Override: $NODENAME_OVERRIDE"
+echo "SSH User:          $CONTROLLER_SSH_USER"
 
 # =========================
 # Derived

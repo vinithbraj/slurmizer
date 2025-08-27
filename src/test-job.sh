@@ -1,6 +1,6 @@
 # --- Create a new batch script named test_job_1.sh ---
 cat > test_job_1.sh <<'EOF'
-#!/bin/bash                     # Use bash as the shell for this job script
+#!/bin/bash
 
 #SBATCH -J testjob              # Job name (shows up in squeue/sacct)
 #SBATCH --error slurm-%j.err    # File to write STDERR (errors), %j expands to job ID

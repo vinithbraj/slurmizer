@@ -125,6 +125,15 @@ sudo chown slurm:slurm /var/log/slurmctld.log /var/log/slurmd.log
 # =========================
 # Generate slurm.conf (controller copy)
 # =========================
+# --- gather nodes from CLI (space or comma separated) or $NODES env ---
+NODES_CLI="$(printf '%s' "$*" | tr ' ' ',' | sed 's/^,\+//;s/,\+$//;s/,,\+/,/g')"
+if [ -z "$NODES_CLI" ] && [ -n "${NODES:-}" ]; then
+  NODES_CLI="$(printf '%s' "$NODES" | tr ' ' ',' | sed 's/^,\+//;s/,\+$//;s/,,\+/,/g')"
+fi
+
+# All nodes that will go into the partition
+ALL_NODES="${HOST_SHORT}${NODES_CLI:+,${NODES_CLI}}"
+
 SLURM_CONF=/etc/slurm/slurm.conf
 echo "[*] Writing $SLURM_CONF ..."
 sudo tee "$SLURM_CONF" >/dev/null <<EOF
@@ -153,8 +162,13 @@ SlurmctldPort=6817
 SlurmdPort=6818
 $( [ "${GPU_ENABLE}" = "1" ] && echo "GresTypes=gpu" )
 
+# --- define the controller node explicitly ---
 NodeName=${HOST_SHORT} CPUs=${CPUS} RealMemory=${MEM_MB} State=UNKNOWN
-PartitionName=${PARTITION_NAME} Nodes=${NODES} Default=YES MaxTime=INFINITE State=UP
+# --- define extra worker nodes passed via CLI/env (can be ranges like n[01-04]) ---
+$( [ -n "$NODES_CLI" ] && echo "NodeName=${NODES_CLI} CPUs=${CPUS} RealMemory=${MEM_MB} State=UNKNOWN" )
+
+# Partition includes controller + workers
+PartitionName=${PARTITION_NAME} Nodes=${ALL_NODES} Default=YES MaxTime=INFINITE State=UP
 EOF
 
 # =========================
