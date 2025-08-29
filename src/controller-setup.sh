@@ -42,6 +42,17 @@ MEM_MB="$(free -m | awk '/Mem:/ {printf "%d", $2*0.95}')"  # total RAM minus ~5%
 echo "CPUS=$CPUS MEM_MB=$MEM_MB"
 
 # =========================
+# Helpers
+# =========================
+log()  { echo "[*] $*"; }
+warn() { echo "[!] $*"; }
+die()  { echo "[x] $*" >&2; exit 1; }
+
+need_root() {
+  [[ $EUID -eq 0 ]] || die "Run as root or with sudo."
+}
+
+# =========================
 # Install required packages
 # =========================
 echo "[*] Installing packages..."
@@ -194,14 +205,15 @@ sudo awk '
 ' "$SLURM_CONF" | sudo tee /etc/slurm/slurm.conf.new >/dev/null
 sudo mv /etc/slurm/slurm.conf.new /etc/slurm/slurm.conf
 
-# Override systemd unit for slurmrestd (run as slurm user with JWT)
+# Override systemd unit for slurmrestd (run as slurmrestd user with JWT)
+sudo useradd --system --no-create-home slurmrestd
 sudo mkdir -p /etc/systemd/system/slurmrestd.service.d
 sudo tee /etc/systemd/system/slurmrestd.service.d/override.conf >/dev/null <<EOF
 [Service]
-User=slurm
-Group=slurm
+User=slurmrestd
+Group=slurmrestd
 ExecStart=
-ExecStart=/usr/sbin/slurmrestd -a rest_auth/jwt -s slurmctld ${LISTEN_ADDR}:${RESTD_PORT}
+ExecStart=/usr/sbin/slurmrestd -a rest_auth/jwt -s slurmctld, slurmdbd ${LISTEN_ADDR}:${RESTD_PORT}
 UMask=0077
 EOF
 

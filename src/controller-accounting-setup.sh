@@ -126,7 +126,6 @@ StorageType=accounting_storage/mysql
 StorageHost=localhost
 StorageLoc=$DB_NAME
 StorageUser=$DB_USER
-StoragePass=
 StoragePort=0
 EOF
   else
