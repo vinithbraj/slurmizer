@@ -213,7 +213,7 @@ sudo tee /etc/systemd/system/slurmrestd.service.d/override.conf >/dev/null <<EOF
 User=slurmrestd
 Group=slurmrestd
 ExecStart=
-ExecStart=/usr/sbin/slurmrestd -a rest_auth/jwt -s slurmctld, slurmdbd ${LISTEN_ADDR}:${RESTD_PORT}
+ExecStart=/usr/sbin/slurmrestd -a rest_auth/jwt -s slurmctld ${LISTEN_ADDR}:${RESTD_PORT}
 UMask=0077
 EOF
 
