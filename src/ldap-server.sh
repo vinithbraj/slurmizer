@@ -199,3 +199,6 @@ msg "  ss -tlnp | awk '/:389/'"
 msg "  ldapsearch -H ldap://<host-or-ip> -x -b ${LDAP_BASE_DN} -LLL '(objectClass=*)'"
 msg "  ldapwhoami  -H ldap://<host-or-ip> -x -D cn=admin,${LDAP_BASE_DN} -W"
 msg "  ldapwhoami  -H ldap://<host-or-ip> -x -D cn=${BIND_DN_CN},ou=System,${LDAP_BASE_DN} -W"
+# ldapsearch -H ldaps://<SERVER_FQDN_or_IP> \
+# -x -D "cn=admin,dc=lab,dc=local" -W \
+#  -b "dc=lab,dc=local" "(objectClass=*)"

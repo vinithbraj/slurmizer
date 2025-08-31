@@ -1,0 +1,38 @@
+# 1) who am i (config socket)
+ldapwhoami -Y EXTERNAL -H ldapi:///
+
+# 2) can i bind as admin over TLS?
+ldapsearch -H ldaps://<SERVER_FQDN_or_IP> \
+  -x -D "cn=admin,dc=lab,dc=local" -W \
+  -b "dc=lab,dc=local" "(objectClass=*)"
+
+# 3) see the sample user/group (if you kept them)
+ldapsearch -x -D "cn=admin,dc=lab,dc=local" -W \
+  -b "ou=People,dc=lab,dc=local" "(uid=vinith)" cn uidNumber gidNumber
+ldapsearch -x -D "cn=admin,dc=lab,dc=local" -W \
+  -b "ou=Groups,dc=lab,dc=local" "(cn=devs)" cn gidNumber
+
+
+
+
+
+
+
+
+
+
+
+# trust CA (if you copied it)
+sudo update-ca-certificates
+
+# sssd running?
+systemctl status sssd --no-pager
+
+# lookup works?
+getent passwd vinith
+id vinith
+
+# login test (from another machine or local TTY)
+ssh vinith@<client-node>
+# first login should auto-create /home/vinith via mkhomedir
+
