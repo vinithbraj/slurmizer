@@ -1,0 +1,16 @@
+# AUTO-GENERATED FILE - DO NOT EDIT!! Use ldapmodify.
+# CRC32 876b6210
+dn: cn=config
+objectClass: olcGlobal
+cn: config
+olcArgsFile: /var/run/slapd/slapd.args
+olcLogLevel: none
+olcPidFile: /var/run/slapd/slapd.pid
+olcToolThreads: 1
+structuralObjectClass: olcGlobal
+entryUUID: 2f7568e0-1a49-1040-8963-2b5bb611a4a9
+creatorsName: cn=config
+createTimestamp: 20250831000001Z
+entryCSN: 20250831000001.563922Z#000000#000#000000
+modifiersName: cn=config
+modifyTimestamp: 20250831000001Z

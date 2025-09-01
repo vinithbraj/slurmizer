@@ -1,0 +1,4 @@
+SLAPD_CONF=
+SLAPD_PIDFILE=
+SLAPD_SERVICES="ldap:/// ldapi:///"
+SLAPD_SOCKS=/run/slapd

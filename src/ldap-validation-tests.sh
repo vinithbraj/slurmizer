@@ -13,15 +13,6 @@ ldapsearch -x -D "cn=admin,dc=lab,dc=local" -W \
   -b "ou=Groups,dc=lab,dc=local" "(cn=devs)" cn gidNumber
 
 
-
-
-
-
-
-
-
-
-
 # trust CA (if you copied it)
 sudo update-ca-certificates
 
