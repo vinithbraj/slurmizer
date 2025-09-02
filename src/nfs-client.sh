@@ -22,8 +22,8 @@ mkdir -p "$MOUNT_HOME" "$MOUNT_SCRATCH"
 if ! grep -q "$MOUNT_HOME" /etc/fstab; then
   echo "server:/home fstab entry"
   cat <<EOF >> /etc/fstab
-${SERVER}:/home   ${MOUNT_HOME}     nfs4  rw,nofail,x-systemd.automount,_netdev,noatime  0 0
-${SERVER}:/scratch ${MOUNT_SCRATCH} nfs4  rw,nofail,x-systemd.automount,_netdev,noatime  0 0
+${SERVER}:/home   ${MOUNT_HOME}     nfs4  rw,nofail,_netdev,noatime  0 0
+${SERVER}:/scratch ${MOUNT_SCRATCH} nfs4  rw,nofail,_netdev,noatime  0 0
 EOF
 fi
 
