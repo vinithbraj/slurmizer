@@ -1,0 +1,17 @@
+services:
+  ood:
+    image: yourrepo/base-ubuntu24-systemd:latest
+    container_name: ood
+    # For systemd-based images, you usually need privileged + host PID/cgroup
+    privileged: true
+    pid: "host"
+    cgroup: "host"
+    environment:
+      - STORAGE_DIR=/srv/storage
+    volumes:
+      # Bind mount host dir into the standardized container path
+      - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}:/srv/storage:rw
+      # If the service needs extra mounts, add more here
+    # For network-heavy services (like NFS server), you might also do:
+    # network_mode: host
+    restart: unless-stopped
