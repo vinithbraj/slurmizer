@@ -1,0 +1,71 @@
+version: "3.9"
+
+# Reusable block: FQDN → IP mappings for /etc/hosts in every container
+x-extra-hosts: &extra_hosts
+  - "ldap ldap.local.lab ldap.lab.local:192.168.0.10"
+  - "nfs nfs.local.lab nfs.lab.local:192.168.0.11"
+  - "controller controller.local.lab controller.lab.local:192.168.0.12"
+  - "ood ood.local.lab ood.lab.local:192.168.0.13"
+
+networks:
+  lan_net:
+    driver: macvlan
+    driver_opts:
+      parent: eth0            # <-- replace with your host NIC
+    ipam:
+      config:
+        - subnet: 192.168.0.0/24
+          gateway: 192.168.0.1
+          ip_range: 192.168.0.10/28  # gives .10–.25; adjust as needed
+
+services:
+  ldap:
+    image: base-ubuntu24-systemd:latest
+    container_name: ldap
+    hostname: ldap
+    domainname: lab.local
+    networks:
+      lan_net:
+        ipv4_address: 192.168.0.10
+    extra_hosts: *extra_hosts
+    restart: unless-stopped
+
+  nfs:
+    image: base-ubuntu24-systemd:latest
+    container_name: nfs
+    hostname: nfs
+    domainname: lab.local
+    privileged: true
+    # pid/cgroup host are optional; add if your systemd-in-container needs it
+    # pid: "host"
+    # cgroup: "host"
+    networks:
+      lan_net:
+        ipv4_address: 192.168.0.11
+    extra_hosts: *extra_hosts
+    restart: unless-stopped
+
+  controller:
+    image: base-ubuntu24-systemd:latest
+    container_name: controller
+    hostname: controller
+    domainname: lab.local
+    networks:
+      lan_net:
+        ipv4_address: 192.168.0.12
+    extra_hosts: *extra_hosts
+    restart: unless-stopped
+
+  ood:
+    image: base-ubuntu24-systemd:latest
+    container_name: ood
+    hostname: ood
+    domainname: lab.local
+    networks:
+      lan_net:
+        ipv4_address: 192.168.0.13
+    extra_hosts: *extra_hosts
+    # With macvlan the container already has a real LAN IP.
+    # If exposing to the internet, point your firewall/NAT/public DNS to 192.168.0.13:443.
+    # ports: ["443:443"]  # usually not needed with macvlan
+    restart: unless-stopped
