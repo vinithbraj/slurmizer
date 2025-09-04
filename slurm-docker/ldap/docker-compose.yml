@@ -1,17 +1,11 @@
+version: "3.9"
 services:
-  ldap:
-    image: yourrepo/base-ubuntu24-systemd:latest
+  ldap:               # change name per service
+    image: base-ubuntu24-systemd:latest
     container_name: ldap
-    # For systemd-based images, you usually need privileged + host PID/cgroup
-    privileged: true
-    pid: "host"
-    cgroup: "host"
-    environment:
-      - STORAGE_DIR=/srv/storage
     volumes:
-      # Bind mount host dir into the standardized container path
-      - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}:/srv/storage:rw
-      # If the service needs extra mounts, add more here
-    # For network-heavy services (like NFS server), you might also do:
-    # network_mode: host
+      # Canonical /home inside the container, unique per service on the host
+      - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home:/home:rw
+      # Optional: a subdir for “shared” within THIS service’s partition
+      - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home/shared:/home/shared:rw
     restart: unless-stopped
