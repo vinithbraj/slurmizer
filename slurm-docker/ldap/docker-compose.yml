@@ -1,6 +1,6 @@
 version: "3.9"
 services:
-  ldap:               # change name per service
+  ldap:      
     image: base-ubuntu24-systemd:latest
     container_name: ldap
     volumes:

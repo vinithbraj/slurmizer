@@ -1,8 +1,8 @@
 version: "3.9"
 services:
-  ldap:               # change name per service
+  controller:            
     image: base-ubuntu24-systemd:latest
-    container_name: ldap
+    container_name: controller
     volumes:
       # Canonical /home inside the container, unique per service on the host
       - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home:/home:rw
