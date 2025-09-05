@@ -1,11 +1,16 @@
 version: "3.9"
+
 services:
-  ldap:      
+  ldap:
     image: base-ubuntu24-systemd:latest
     container_name: ldap
+    privileged: true                 # required for systemd
+    cgroup: host                     # let systemd manage cgroups
     volumes:
-      # Canonical /home inside the container, unique per service on the host
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home:/home:rw
-      # Optional: a subdir for “shared” within THIS service’s partition
       - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home/shared:/home/shared:rw
+    ports:
+      - "389:389"
     restart: unless-stopped
+    command: ["/sbin/init"]
