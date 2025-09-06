@@ -1,6 +1,6 @@
 services:
   ldap:
-    image: ldap-v1:latest
+    image: ldap:latest
     container_name: ldap
     privileged: true                 # required for systemd
     cgroup: host                     # let systemd manage cgroups

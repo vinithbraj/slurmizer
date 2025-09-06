@@ -37,7 +37,8 @@ CMD ["/sbin/init"]
 #   --privileged --cgroupns=host \
 #   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
 #   ldap:latest
-# 
+# docker commit ldap ldap-v2:latest
+
 # or using docker-compose
 # docker-compose up -d
 #
@@ -53,4 +54,4 @@ CMD ["/sbin/init"]
 # brew install openldap
 # ldapsearch -x -H ldap://localhost -b "dc=lab,dc=local"
 #
-#ldapsearch -x -H ldap://localhost -b "dc=lab,dc=local" -D "cn=user1,dc=lab,dc=local" -w pass123
+# ldapsearch -x -H ldap://localhost -b "dc=lab,dc=local" -D "cn=user1,dc=lab,dc=local" -w pass123

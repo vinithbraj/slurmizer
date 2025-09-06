@@ -1,32 +1,35 @@
-version: "3.9"
-
 # Reusable block: FQDN → IP mappings for /etc/hosts in every container
 x-extra-hosts: &extra_hosts
-  - "ldap ldap.local.lab ldap.lab.local:192.168.0.10"
-  - "nfs nfs.local.lab nfs.lab.local:192.168.0.11"
-  - "controller controller.local.lab controller.lab.local:192.168.0.12"
-  - "ood ood.local.lab ood.lab.local:192.168.0.13"
+  - "ldap ldap.local.lab ldap.lab.local:192.168.11.10"
+  - "nfs nfs.local.lab nfs.lab.local:192.168.11.11"
+  - "controller controller.local.lab controller.lab.local:192.168.11.12"
+  - "ood ood.local.lab ood.lab.local:192.168.11.13"
 
 networks:
   lan_net:
     driver: macvlan
     driver_opts:
-      parent: eth0            # <-- replace with your host NIC
+      parent: ens33            # <-- replace with your host NIC
     ipam:
       config:
-        - subnet: 192.168.0.0/24
-          gateway: 192.168.0.1
-          ip_range: 192.168.0.10/28  # gives .10–.25; adjust as needed
+        - subnet: 192.168.11.0/24
+          gateway: 192.168.11.1
+          ip_range: 192.168.11.0/28  # gives .10–.25; adjust as needed
 
 services:
   ldap:
-    image: base-ubuntu24-systemd:latest
+    image: ldap:setup_complete
     container_name: ldap
     hostname: ldap
     domainname: lab.local
+    privileged: true                  # systemd requires this in Docker
+    cgroup: host                      # let systemd manage cgroups
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    command: ["/sbin/init"]    
     networks:
       lan_net:
-        ipv4_address: 192.168.0.10
+        ipv4_address: 192.168.11.10
     extra_hosts: *extra_hosts
     restart: unless-stopped
 
@@ -41,7 +44,7 @@ services:
     # cgroup: "host"
     networks:
       lan_net:
-        ipv4_address: 192.168.0.11
+        ipv4_address: 192.168.11.11
     extra_hosts: *extra_hosts
     restart: unless-stopped
 
@@ -52,7 +55,7 @@ services:
     domainname: lab.local
     networks:
       lan_net:
-        ipv4_address: 192.168.0.12
+        ipv4_address: 192.168.11.12
     extra_hosts: *extra_hosts
     restart: unless-stopped
 
@@ -63,7 +66,7 @@ services:
     domainname: lab.local
     networks:
       lan_net:
-        ipv4_address: 192.168.0.13
+        ipv4_address: 192.168.11.13
     extra_hosts: *extra_hosts
     # With macvlan the container already has a real LAN IP.
     # If exposing to the internet, point your firewall/NAT/public DNS to 192.168.0.13:443.
