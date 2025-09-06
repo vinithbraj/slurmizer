@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
 
   nfs:
-    image: base-ubuntu24-systemd:latest
+    image: nfs:setup_complete
     container_name: nfs
     hostname: nfs
     domainname: lab.local

@@ -28,7 +28,7 @@ CMD ["/sbin/init"]
 #
 # Build the docker image
 #
-# docker build --network=host  -t nfs -f slurm-docker/nfs/Dockerfile .
+# docker build -t nfs -f slurm-docker/nfs/Dockerfile .
 
 # Run the docker using
 # docker run -d --name nfs --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw nfs:latest
