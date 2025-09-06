@@ -1,16 +1,16 @@
-version: "3.9"
-
 services:
   nfs:
-    image: base-ubuntu24-systemd:latest
+    image: nfs:latest
     container_name: nfs
     privileged: true
-    pid: "host"
     cgroup: "host"
     volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
       # This service’s private host storage
-      - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home:/home:rw
-      - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home/shared:/home/shared:rw
-    # Typical for an NFS server container:
-    network_mode: host
+      # - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home:/home:rw
+      # - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home/shared:/home/shared:rw
+      # Typical for an NFS server container:
+    # network_mode: host
     restart: unless-stopped
+
+
