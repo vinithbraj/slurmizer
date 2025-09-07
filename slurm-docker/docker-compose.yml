@@ -75,15 +75,18 @@ services:
     restart: unless-stopped
 
   ood:
-    image: base-ubuntu24-systemd:latest
+    image: ood:setup_complete
     container_name: ood
     hostname: ood
     domainname: lab.local
+    privileged: true                  # systemd requires this in Docker
+    cgroup: host                      # let systemd manage cgroups
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    command: ["/sbin/init"]    
     networks:
       lan_net:
         ipv4_address: 192.168.11.13
     extra_hosts: *extra_hosts
-    # With macvlan the container already has a real LAN IP.
-    # If exposing to the internet, point your firewall/NAT/public DNS to 192.168.0.13:443.
-    # ports: ["443:443"]  # usually not needed with macvlan
     restart: unless-stopped
+
