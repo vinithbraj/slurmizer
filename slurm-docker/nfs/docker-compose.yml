@@ -17,3 +17,7 @@ services:
     environment:
       - NFS_EXPORT_0=/home *(rw,sync,no_subtree_check,no_root_squash)
       - NFS_EXPORT_0=/scratch *(rw,sync,no_subtree_check,no_root_squash)
+
+# Request nfs-kernel-server to be installed in the host machine - do mod prob
+# sudo apt-get install nfs-kernel-server
+# sudo systemctl stop nfs-kernel-server rpcbind rpcbind.socket
