@@ -34,8 +34,10 @@ services:
     restart: unless-stopped
 
   nfs:
-    image: nfs:setup_complete
+    image: erichough/nfs-server
     container_name: nfs
+    hostname: nfs
+    domainname: lab.local
     privileged: true                   # needed for NFS kernel modules
     restart: unless-stopped
     ports:
@@ -46,22 +48,26 @@ services:
       - "32765-32768:32765-32768"       # mountd, statd, lockd
       - "32765-32768:32765-32768/udp"
     volumes:
-      - /srv/nfs4/home:/home:rw
-      - /srv/nfs4/scratch:/scratch:rw
+      - /srv/nfs4/home:/exports/home:rw
+      - /srv/nfs4/scratch:/exports/scratch:rw
     environment:
-      - NFS_EXPORT_0=/home *(rw,sync,no_subtree_check,no_root_squash)
-      - NFS_EXPORT_0=/scratch *(rw,sync,no_subtree_check,no_root_squash)
+      - NFS_EXPORT_0=/exports/home *(rw,sync,no_subtree_check,no_root_squash)
+      - NFS_EXPORT_1=/exports/scratch *(rw,sync,no_subtree_check,no_root_squash)
     networks:
       lan_net:
         ipv4_address: 192.168.11.11
     extra_hosts: *extra_hosts
-    restart: unless-stopped
 
   controller:
-    image: base-ubuntu24-systemd:latest
+    image: controller:setup_complete
     container_name: controller
     hostname: controller
     domainname: lab.local
+    privileged: true                  # systemd requires this in Docker
+    cgroup: host                      # let systemd manage cgroups
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    command: ["/sbin/init"]    
     networks:
       lan_net:
         ipv4_address: 192.168.11.12

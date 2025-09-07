@@ -1,11 +1,18 @@
-version: "3.9"
 services:
-  controller:            
-    image: base-ubuntu24-systemd:latest
+  controller:
+    image: controller:latest
     container_name: controller
+    hostname: controller
+    domainname: lab.local
+    privileged: true
+    cgroup: "host"
     volumes:
-      # Canonical /home inside the container, unique per service on the host
-      - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home:/home:rw
-      # Optional: a subdir for “shared” within THIS service’s partition
-      - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home/shared:/home/shared:rw
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      # This service’s private host storage
+      # - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home:/home:rw
+      # - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home/shared:/home/shared:rw
+      # Typical for an NFS server container:
+    # network_mode: host
     restart: unless-stopped
+
+
