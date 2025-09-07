@@ -36,12 +36,21 @@ services:
   nfs:
     image: nfs:setup_complete
     container_name: nfs
-    hostname: nfs
-    domainname: lab.local
-    privileged: true
-    # pid/cgroup host are optional; add if your systemd-in-container needs it
-    # pid: "host"
-    # cgroup: "host"
+    privileged: true                   # needed for NFS kernel modules
+    restart: unless-stopped
+    ports:
+      - "2049:2049"                     # NFS
+      - "2049:2049/udp"
+      - "111:111"                       # portmapper
+      - "111:111/udp"
+      - "32765-32768:32765-32768"       # mountd, statd, lockd
+      - "32765-32768:32765-32768/udp"
+    volumes:
+      - /srv/nfs4/home:/home:rw
+      - /srv/nfs4/scratch:/scratch:rw
+    environment:
+      - NFS_EXPORT_0=/home *(rw,sync,no_subtree_check,no_root_squash)
+      - NFS_EXPORT_0=/scratch *(rw,sync,no_subtree_check,no_root_squash)
     networks:
       lan_net:
         ipv4_address: 192.168.11.11

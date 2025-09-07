@@ -1,16 +1,19 @@
 services:
   nfs:
-    image: nfs:latest
+    image: erichough/nfs-server
     container_name: nfs
-    privileged: true
-    cgroup: "host"
-    volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      # This service’s private host storage
-      # - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home:/home:rw
-      # - ${HOST_STORAGE_ROOT}/${IMAGE_NAME}/home/shared:/home/shared:rw
-      # Typical for an NFS server container:
-    # network_mode: host
+    privileged: true                   # needed for NFS kernel modules
     restart: unless-stopped
-
-
+    ports:
+      - "2049:2049"                     # NFS
+      - "2049:2049/udp"
+      - "111:111"                       # portmapper
+      - "111:111/udp"
+      - "32765-32768:32765-32768"       # mountd, statd, lockd
+      - "32765-32768:32765-32768/udp"
+    volumes:
+      - /srv/nfs4/home:/home:rw
+      - /srv/nfs4/scratch:/scratch:rw
+    environment:
+      - NFS_EXPORT_0=/home *(rw,sync,no_subtree_check,no_root_squash)
+      - NFS_EXPORT_0=/scratch *(rw,sync,no_subtree_check,no_root_squash)
